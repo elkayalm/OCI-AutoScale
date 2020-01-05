@@ -305,26 +305,3 @@ for t in threads:
    t.join()
 
 print ("All scaling tasks done")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
