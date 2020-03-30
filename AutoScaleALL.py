@@ -13,7 +13,7 @@ WeekDay = "WeekDay"
 Daysofweek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 # OCI Configuration
-configfile = "C:\\Users\\melkayal\\.oci\\config_autoscale"
+configfile = "~\\oci\\config_autoscale"
 ComputeShutdownMethod = "SOFTSTOP"
 
 # Configure logging output
