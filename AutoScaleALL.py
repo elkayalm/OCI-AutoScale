@@ -29,7 +29,7 @@ ISR = dict(
 )
 
 # OCI Configuration
-configfile = "C:\\Users\\melkayal\\.oci\\config_autoscale"
+configfile = "~\\.oci\\config"
 ComputeShutdownMethod = "SOFTSTOP"
 
 # Configure logging output
