@@ -1,6 +1,10 @@
+# 01-april-2020 Mohamed Elkayal Added support for countries with different weekends and time zones
+#
+
 import oci
 import logging
 import datetime
+import pytz
 import threading
 import time
 import sys
@@ -11,9 +15,21 @@ AnyDay = "AnyDay"
 Weekend = "Weekend"
 WeekDay = "WeekDay"
 Daysofweek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+weekDays_Sun_to_Thur = ['Algeria', 'Bahrain', 'Bangladesh', 'Egypt', 'Iraq', 'Israel',
+                      'Malaysia', 'Oman', 'Qatar', 'SaudiArabia', 'UnitedArabEmirates' ]
+
+# Country name finder and its timezone
+UK = dict(
+    TimeZone = 'Europe/London',
+    Country  = 'United Kingdom'
+)
+ISR = dict(
+    TimeZone = 'Asia/Jerusalem',
+    Country  = 'Israel'
+)
 
 # OCI Configuration
-configfile = "~\\oci\\config_autoscale"
+configfile = "C:\\Users\\melkayal\\.oci\\config_autoscale"
 ComputeShutdownMethod = "SOFTSTOP"
 
 # Configure logging output
@@ -32,11 +48,23 @@ if len(sys.argv) >= 2:
 else:
     profile = 'DEFAULT'
 
-if len(sys.argv) == 3:
+if len(sys.argv) >= 3:
     if sys.argv[2].upper() == "UP":
         Action = "Up"
     if sys.argv[2].upper() == "DOWN":
         Action = "Down"
+
+# Get Country/time zone details through command line
+if len(sys.argv) == 4:
+    if sys.argv[3] == 'UK':
+        time_zone = UK['TimeZone']
+        country = UK['Country']
+    elif sys.argv[3] == 'ISR':
+        time_zone = ISR['TimeZone']
+        country = ISR['Country']
+else:
+    time_zone = 'Europe/London'
+    country = ''
 
 logger.info("Starting Auto Scaling script, executing {} actions".format(Action))
 
@@ -102,7 +130,7 @@ tcount = 0
 # Get Current Day, time
 DayOfWeek = datetime.datetime.today().weekday()  # Day of week as a number
 Day = Daysofweek[DayOfWeek]  # Day of week as string
-CurrentHour = datetime.datetime.now().hour
+CurrentHour = (datetime.datetime.now(pytz.timezone(time_zone))).hour   # Time zone specified hour
 logger.info("Day of week: {} - Current hour: {}".format(Day, CurrentHour))
 
 # Array start with 0 so decrease CurrentHour with 1
@@ -174,14 +202,25 @@ for c in regions_list:
 
                     schedule = resource.defined_tags[PredefinedTag]
                     ActiveSchedule = ""
+
                     if AnyDay in schedule:
                         ActiveSchedule = schedule[AnyDay]
-                    if DayOfWeek < 6:  # check for weekday / weekend
-                        if WeekDay in schedule:
-                            ActiveSchedule = schedule[WeekDay]
-                    else:
-                        if Weekend in schedule:
-                            ActiveSchedule = schedule[Weekend]
+
+                    if country in weekDays_Sun_to_Thur: # check for weekday / weekend days for countries
+                        if DayOfWeek == 4 or DayOfWeek == 5:    # For countries with weekend days Fri & Sat
+                            if Weekend in schedule:
+                                ActiveSchedule = schedule[Weekend]
+                        else:
+                            if WeekDay in schedule:
+                                ActiveSchedule = schedule[WeekDay]
+                    else: # For countries with weekend days Sat&Sun
+                        if DayOfWeek < 6:
+                            if WeekDay in schedule:
+                                ActiveSchedule = schedule[WeekDay]
+                        else:
+                            if Weekend in schedule:
+                                ActiveSchedule = schedule[Weekend]
+
                     if Day in schedule:  # Check for day specific tag (today)
                         ActiveSchedule = schedule[Day]
 
@@ -212,16 +251,16 @@ for c in regions_list:
                                                 response = compute.instance_action(instance_id=resource.identifier, action=ComputeShutdownMethod)
                                                 print("Initiated Compute shutdown")
                                             else:
-                                                print("Correct state")
+                                                print("Correct state({})".format(resourceDetails.lifecycle_state))
 
                                         elif resourceDetails.lifecycle_state == "STOPPED" and int(schedulehours[CurrentHour]) == 1:
                                             if Action == "All" or Action == "Up":
                                                 response = compute.instance_action(instance_id=resource.identifier, action="START")
                                                 print("Initiated Compute startup")
                                             else:
-                                                print("Correct state")
+                                                print("Correct state({})".format(resourceDetails.lifecycle_state))
                                         else:
-                                            print("Correct state")
+                                            print("Correct state({})".format(resourceDetails.lifecycle_state))
 
                                     # Execute CPU Scale Up/Down operations for Database BMs
                                     if resourceDetails.shape[:2] == "BM":
@@ -239,9 +278,9 @@ for c in regions_list:
                                                     response = database.update_db_system(db_system_id=resource.identifier, update_db_system_details=dbupdate)
                                                     print("Initiate Computed startup")
                                             else:
-                                                print("Correct state")
+                                                print("Correct state({})".format(resourceDetails.lifecycle_state))
                                         else:
-                                            print("Correct state")
+                                            print("Correct state({})".format(resourceDetails.lifecycle_state))
 
 
                             elif resource.resource_type == "DbSystem":
@@ -260,16 +299,16 @@ for c in regions_list:
                                                     response = database.db_node_action(db_node_id=dbnodedetails.id, action="STOP")
                                                     print("Initiated DB shutdown")
                                                 else:
-                                                    print("Correct state")
+                                                    print("Correct state({})".format(resourceDetails.lifecycle_state))
 
                                             elif dbnodedetails.lifecycle_state == "STOPPED" and int(schedulehours[CurrentHour]) == 1:
                                                 if Action == "All" or Action == "Up":
                                                     response = database.db_node_action(db_node_id=dbnodedetails.id, action="START")
                                                     print("Initiated DB startup")
                                                 else:
-                                                    print("Correct state")
+                                                    print("Correct state({})".format(resourceDetails.lifecycle_state))
                                             else:
-                                                print("Correct state")
+                                                print("Correct state({})".format(resourceDetails.lifecycle_state))
 
                             # Execute CPU Scale Up/Down operations for Database BMs
                             elif resource.resource_type == "AutonomousDatabase":
@@ -283,7 +322,7 @@ for c in regions_list:
                                             response = database.stop_autonomous_database(autonomous_database_id=resource.identifier)
                                             print("Initiated Autonomous DB shutdown")
                                         else:
-                                            print("Correct state")
+                                            print("Correct state({})".format(resourceDetails.lifecycle_state))
 
                                     elif resourceDetails.lifecycle_state == "STOPPED" and int(schedulehours[CurrentHour]) > 0:
                                         if Action == "All" or Action == "Up":
@@ -299,9 +338,9 @@ for c in regions_list:
                                                 thread.start()
                                                 threads.append(thread)
                                         else:
-                                            print("Correct state")
+                                            print("Correct state({})".format(resourceDetails.lifecycle_state))
                                     else:
-                                        print("Correct state")
+                                        print("Correct state({})".format(resourceDetails.lifecycle_state))
                             error_status_flag = False
                 except:
                     num_attempts += 1
