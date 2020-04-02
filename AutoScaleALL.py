@@ -1,4 +1,4 @@
-# 01-april-2020 Mohamed Elkayal Added support for countries with different weekends and time zones
+# 02-april-2020 Mohamed Elkayal Added support for countries with different weekends and time zones
 #
 
 import oci
@@ -15,29 +15,27 @@ AnyDay = "AnyDay"
 Weekend = "Weekend"
 WeekDay = "WeekDay"
 Daysofweek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-weekDays_Sun_to_Thur = ['Algeria', 'Bahrain', 'Bangladesh', 'Egypt', 'Iraq', 'Israel',
-                      'Malaysia', 'Oman', 'Qatar', 'SaudiArabia', 'UnitedArabEmirates' ]
 
-# Country name finder and its timezone
+# Country weekend days finder and its timezone
 UK = dict(
-    TimeZone = 'Europe/London',
-    Country  = 'United Kingdom'
+    TimeZone = "GB",
+    weekendDays = ["Saturday", "Sunday"]
 )
-ISR = dict(
-    TimeZone = 'Asia/Jerusalem',
-    Country  = 'Israel'
+IL = dict(
+    TimeZone = "Israel",
+    weekendDays = ["Friday", "Saturday"]
 )
 
 # OCI Configuration
-configfile = "~\\.oci\\config"
+# configfile = r"~\.oci\config_autoscale"
 ComputeShutdownMethod = "SOFTSTOP"
 
 # Configure logging output
 # logging.basicConfig(filename="~/autoscale.log", format='%(asctime)s %(message)s', level=logging.INFO)
-logging.basicConfig(format='%(asctime)s %(message)s', level=logging.WARNING)
+logging.basicConfig(format="%(asctime)s %(message)s", level=logging.WARNING)
 
 # Logging for this script so we don't have to use the same settings as the OCI module
-logger = logging.getLogger('Info')
+logger = logging.getLogger("Info")
 logger.setLevel(logging.INFO)
 
 Action = "All"  # Default, do all up/on and down/off scaling actions
@@ -46,7 +44,7 @@ Action = "All"  # Default, do all up/on and down/off scaling actions
 if len(sys.argv) >= 2:
     profile = sys.argv[1]
 else:
-    profile = 'DEFAULT'
+    profile = "DEFAULT"
 
 if len(sys.argv) >= 3:
     if sys.argv[2].upper() == "UP":
@@ -56,15 +54,15 @@ if len(sys.argv) >= 3:
 
 # Get Country/time zone details through command line
 if len(sys.argv) == 4:
-    if sys.argv[3] == 'UK':
-        time_zone = UK['TimeZone']
-        country = UK['Country']
-    elif sys.argv[3] == 'ISR':
-        time_zone = ISR['TimeZone']
-        country = ISR['Country']
+    if sys.argv[3] == "UK":
+        timeZone = UK["TimeZone"]
+        weekendDays = UK["weekendDays"]
+    elif sys.argv[3] == "IL":
+        timeZone = IL["TimeZone"]
+        weekendDays = IL["weekendDays"]
 else:
-    time_zone = 'Europe/London'
-    country = ''
+    timeZone = "GB"
+    weekendDays = ["Saturday", "Sunday"]
 
 logger.info("Starting Auto Scaling script, executing {} actions".format(Action))
 
@@ -110,7 +108,7 @@ class PoolThread(threading.Thread):
         response = pool.update_instance_pool(instance_pool_id=self.ID, update_instance_pool_details=pooldetails).data
 
 # Check credentials and enabled regions
-config = oci.config.from_file(configfile, profile_name=profile)
+config = oci.config.from_file(profile_name=profile)
 identity = oci.identity.IdentityClient(config)
 user = identity.get_user(config["user"]).data
 RootCompartmentID = user.compartment_id
@@ -130,7 +128,7 @@ tcount = 0
 # Get Current Day, time
 DayOfWeek = datetime.datetime.today().weekday()  # Day of week as a number
 Day = Daysofweek[DayOfWeek]  # Day of week as string
-CurrentHour = (datetime.datetime.now(pytz.timezone(time_zone))).hour   # Time zone specified hour
+CurrentHour = (datetime.datetime.now(pytz.timezone(timeZone))).hour   # Time zone specified hour
 logger.info("Day of week: {} - Current hour: {}".format(Day, CurrentHour))
 
 # Array start with 0 so decrease CurrentHour with 1
@@ -143,7 +141,7 @@ print("{:25} {:40} {:29} {}".format("Resource type", "Definition", "Compartment 
 def traverse(compartments, parent_id, parent_path, compartment_list):
     next_level_compartments = [c for c in compartments if c.compartment_id == parent_id]
     for compartment in next_level_compartments:
-        if compartment.name[0:17] != 'casb_compartment.' and compartment.lifecycle_state == 'ACTIVE':
+        if compartment.name[0:17] != "casb_compartment." and compartment.lifecycle_state == "ACTIVE":
             path = parent_path+'/'+compartment.name
             compartment_list.append(
                 dict(id=compartment.id, name=compartment.name, path=path, state=compartment.lifecycle_state)
@@ -158,19 +156,19 @@ def get_compartment_list(base_compartment_id):
         compartment_id_in_subtree=True).data
 
     # Got the flat list of compartments, now construct full path of each which makes it much easier to locate resources
-    base_compartment_name = 'Root'
-    base_path = '/root'
+    base_compartment_name = "Root"
+    base_path = "/root"
 
-    compartment_list = [dict(id=base_compartment_id, name=base_compartment_name, path=base_path, state='Root')]
+    compartment_list = [dict(id=base_compartment_id, name=base_compartment_name, path=base_path, state="Root")]
     compartment_list = traverse(compartments, base_compartment_id, base_path, compartment_list)
-    compartment_list = sorted(compartment_list, key=lambda c: c['path'].lower())
+    compartment_list = sorted(compartment_list, key=lambda c: c["path"].lower())
 
     return compartment_list
 
-compartment_list = get_compartment_list(config['tenancy'])
+compartment_list = get_compartment_list(config["tenancy"])
 
 for c in regions_list:
-    config['region'] = c
+    config["region"] = c
     compute = oci.core.ComputeClient(config)
     database = oci.database.DatabaseClient(config)
     pool = oci.core.ComputeManagementClient(config)
@@ -196,64 +194,56 @@ for c in regions_list:
                 try:
                     print(f"{resource.resource_type:25} {resource.display_name:41}", end = "")
                     for cc in compartment_list:
-                        if resource.compartment_id == cc['id']:
+                        if resource.compartment_id == cc["id"]:
                             print(f"{cc['path']:30}", end="")
                             break
 
-                    schedule = resource.defined_tags[PredefinedTag]
-                    ActiveSchedule = ""
+                    tags = resource.defined_tags[PredefinedTag]
+                    ActiveTag = ""
 
-                    if AnyDay in schedule:
-                        ActiveSchedule = schedule[AnyDay]
+                    if AnyDay in tags:
+                        ActiveTag = tags[AnyDay]
 
-                    if country in weekDays_Sun_to_Thur: # check for weekday / weekend days for countries
-                        if DayOfWeek == 4 or DayOfWeek == 5:    # For countries with weekend days Fri & Sat
-                            if Weekend in schedule:
-                                ActiveSchedule = schedule[Weekend]
-                        else:
-                            if WeekDay in schedule:
-                                ActiveSchedule = schedule[WeekDay]
-                    else: # For countries with weekend days Sat&Sun
-                        if DayOfWeek < 6:
-                            if WeekDay in schedule:
-                                ActiveSchedule = schedule[WeekDay]
-                        else:
-                            if Weekend in schedule:
-                                ActiveSchedule = schedule[Weekend]
+                    if Day in weekendDays:  # Weekend check for the current day  
+                        if Weekend in tags:
+                            ActiveTag = tags[Weekend]
+                    else:
+                        if WeekDay in tags:
+                            ActiveTag = tags[WeekDay]
 
-                    if Day in schedule:  # Check for day specific tag (today)
-                        ActiveSchedule = schedule[Day]
+                    if Day in tags:  # Check for day specific tag (today)
+                        ActiveTag = tags[Day]
 
                     # Check is the active schedule contains exactly 24 numbers for each hour of the day and the resource not deleted
                     if resource.lifecycle_state != "DELETED":
                         try:
-                            schedulehours = ActiveSchedule.split(",")
-                            if len(schedulehours) != 24:
+                            tagHours = ActiveTag.split(",")
+                            if len(tagHours) != 24:
                                 print("Error with schedule, not correct amount of hours")
-                                ActiveSchedule = ""
+                                ActiveTag = ""
                                 error_status_flag = False
                         except:
-                            ActiveSchedule = ""
+                            ActiveTag = ""
                             logger.error("Error with schedule of {}".format(resource.display_name))
                             error_status_flag = False
 
                         # if schedule validated, let see if we can apply the new schedule to the resource
-                        if ActiveSchedule != "":
+                        if ActiveTag != "":
                             # Execute On/Off operations for compute VMs
                             if resource.resource_type == "Instance":
-                                if int(schedulehours[CurrentHour]) == 0 or int(schedulehours[CurrentHour]) == 1:
+                                if int(tagHours[CurrentHour]) == 0 or int(tagHours[CurrentHour]) == 1:
                                     resourceDetails = compute.get_instance(instance_id=resource.identifier).data
 
                                     # Only perform action if VM Instance, ignoring any BM instances.
                                     if resourceDetails.shape[:2] == "VM":
-                                        if resourceDetails.lifecycle_state == "RUNNING" and int(schedulehours[CurrentHour]) == 0:
+                                        if resourceDetails.lifecycle_state == "RUNNING" and int(tagHours[CurrentHour]) == 0:
                                             if Action == "All" or Action == "Down":
                                                 response = compute.instance_action(instance_id=resource.identifier, action=ComputeShutdownMethod)
                                                 print("Initiated Compute shutdown")
                                             else:
                                                 print("Correct state({})".format(resourceDetails.lifecycle_state))
 
-                                        elif resourceDetails.lifecycle_state == "STOPPED" and int(schedulehours[CurrentHour]) == 1:
+                                        elif resourceDetails.lifecycle_state == "STOPPED" and int(tagHours[CurrentHour]) == 1:
                                             if Action == "All" or Action == "Up":
                                                 response = compute.instance_action(instance_id=resource.identifier, action="START")
                                                 print("Initiated Compute startup")
@@ -264,17 +254,17 @@ for c in regions_list:
 
                                     # Execute CPU Scale Up/Down operations for Database BMs
                                     if resourceDetails.shape[:2] == "BM":
-                                        if int(schedulehours[CurrentHour]) > 1 and int(schedulehours[CurrentHour]) < 53:
-                                            if resourceDetails.cpu_core_count > int(schedulehours[CurrentHour]):
+                                        if int(tagHours[CurrentHour]) > 1 and int(tagHours[CurrentHour]) < 53:
+                                            if resourceDetails.cpu_core_count > int(tagHours[CurrentHour]):
                                                 if Action == "All" or Action == "Down":
                                                     dbupdate = oci.database.models.UpdateDbSystemDetails()
-                                                    dbupdate.cpu_core_count = int(schedulehours[CurrentHour])
+                                                    dbupdate.cpu_core_count = int(tagHours[CurrentHour])
                                                     response = database.update_db_system(db_system_id=resource.identifier, update_db_system_details=dbupdate)
                                                     print("Initiated Compute shutdown")
-                                            elif resourceDetails.cpu_core_count < int(schedulehours[CurrentHour]):
+                                            elif resourceDetails.cpu_core_count < int(tagHours[CurrentHour]):
                                                 if Action == "All" or Action == "Up":
                                                     dbupdate = oci.database.models.UpdateDbSystemDetails()
-                                                    dbupdate.cpu_core_count = int(schedulehours[CurrentHour])
+                                                    dbupdate.cpu_core_count = int(tagHours[CurrentHour])
                                                     response = database.update_db_system(db_system_id=resource.identifier, update_db_system_details=dbupdate)
                                                     print("Initiate Computed startup")
                                             else:
@@ -293,15 +283,15 @@ for c in regions_list:
                                             print(f"{resource.resource_type:25} {resource.display_name:40} {'Next node of the previouse comp.':29} ", end="")
 
                                         dbnodedetails = database.list_db_nodes(compartment_id=resource.compartment_id, db_system_id=resource.identifier).data[i]
-                                        if int(schedulehours[CurrentHour]) == 0 or int(schedulehours[CurrentHour]) == 1:
-                                            if dbnodedetails.lifecycle_state == "AVAILABLE" and int(schedulehours[CurrentHour]) == 0:
+                                        if int(tagHours[CurrentHour]) == 0 or int(tagHours[CurrentHour]) == 1:
+                                            if dbnodedetails.lifecycle_state == "AVAILABLE" and int(tagHours[CurrentHour]) == 0:
                                                 if Action == "All" or Action == "Down":
                                                     response = database.db_node_action(db_node_id=dbnodedetails.id, action="STOP")
                                                     print("Initiated DB shutdown")
                                                 else:
                                                     print("Correct state({})".format(resourceDetails.lifecycle_state))
 
-                                            elif dbnodedetails.lifecycle_state == "STOPPED" and int(schedulehours[CurrentHour]) == 1:
+                                            elif dbnodedetails.lifecycle_state == "STOPPED" and int(tagHours[CurrentHour]) == 1:
                                                 if Action == "All" or Action == "Up":
                                                     response = database.db_node_action(db_node_id=dbnodedetails.id, action="START")
                                                     print("Initiated DB startup")
@@ -312,29 +302,29 @@ for c in regions_list:
 
                             # Execute CPU Scale Up/Down operations for Database BMs
                             elif resource.resource_type == "AutonomousDatabase":
-                                if int(schedulehours[CurrentHour]) >= 0 and int(schedulehours[CurrentHour]) < 129:
+                                if int(tagHours[CurrentHour]) >= 0 and int(tagHours[CurrentHour]) < 129:
                                     resourceDetails = database.get_autonomous_database(
                                         autonomous_database_id=resource.identifier).data
 
                                     # Autonomous DB is running request is to stop the database
-                                    if resourceDetails.lifecycle_state == "AVAILABLE" and int(schedulehours[CurrentHour]) == 0:
+                                    if resourceDetails.lifecycle_state == "AVAILABLE" and int(tagHours[CurrentHour]) == 0:
                                         if Action == "All" or Action == "Down":
                                             response = database.stop_autonomous_database(autonomous_database_id=resource.identifier)
                                             print("Initiated Autonomous DB shutdown")
                                         else:
                                             print("Correct state({})".format(resourceDetails.lifecycle_state))
 
-                                    elif resourceDetails.lifecycle_state == "STOPPED" and int(schedulehours[CurrentHour]) > 0:
+                                    elif resourceDetails.lifecycle_state == "STOPPED" and int(tagHours[CurrentHour]) > 0:
                                         if Action == "All" or Action == "Up":
                                             # Autonomous DB is stopped and needs to be started with same amount of CPUs configured
-                                            if resourceDetails.cpu_core_count == int(schedulehours[CurrentHour]):
+                                            if resourceDetails.cpu_core_count == int(tagHours[CurrentHour]):
                                                 response = database.start_autonomous_database(autonomous_database_id=resource.identifier)
                                                 print("Initiated Autonomous DB startup")
 
                                             # Autonomous DB is stopped and needs to be started, after that it requires CPU change
-                                            if resourceDetails.cpu_core_count != int(schedulehours[CurrentHour]):
+                                            if resourceDetails.cpu_core_count != int(tagHours[CurrentHour]):
                                                 tcount = tcount+1
-                                                thread = AutonomousThread(tcount, resource.identifier, resource.display_name, int(schedulehours[CurrentHour]))
+                                                thread = AutonomousThread(tcount, resource.identifier, resource.display_name, int(tagHours[CurrentHour]))
                                                 thread.start()
                                                 threads.append(thread)
                                         else:
@@ -353,7 +343,7 @@ for c in regions_list:
                             traceback.print_exc()
                         time.sleep(1)
                     else:
-                        print('Failed with all the attempts')
+                        print("Failed with all the attempts")
 # Wait for any AutonomousDB and Instance Pool Start and rescale tasks completed
 for t in threads:
     t.join()
