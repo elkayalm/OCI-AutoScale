@@ -1,3 +1,8 @@
+# Input Parameters:
+# 		profile_name
+# 		action(UP/DOWN)
+#       country_code
+#
 # 02-april-2020 Mohamed Elkayal Added support for countries with different weekends and time zones
 #
 
