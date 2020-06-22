@@ -3,8 +3,8 @@
 # 		action(UP/DOWN)
 # 		country_code
 # 
-# 02-april-2020 Mohamed Elkayal Added support for countries with different weekends and time zones
-# 20-april-2020 Mohamed Elkayal Added second logger with the timestamps
+# 02-april-2020     Mohamed Elkayal     Added support for countries with different weekends and time zones
+# 20-april-2020     Mohamed Elkayal     Added second logger with the timestamps
 
 import oci
 import logging
